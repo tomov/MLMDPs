@@ -4,6 +4,23 @@ minimap = {
     '.....'
 };
 
+% basis set of tasks
+%
+minimaps = {
+    {'1####', ...
+     '.#X..', ...
+     '0...0'}; ...
+     
+    {'0####', ...
+     '.#X..', ...
+     '1...0'}; ...
+     
+    {'0####', ...
+     '.#X..', ...
+     '0...1'}; ...
+};
+
+
 map = {
     '###################', ...
     '#.................#', ...
@@ -19,10 +36,61 @@ map = {
 
 
 L = createLMDP(minimap, 1);
-[L.a, L.z] = solveLMDP(L);
+L = solveLMDP(L);
+sampleLMDP(L, L.a, minimap);
+%sampleLMDP(L, L.P, minimap);
 
-%sampleLMDP(L, L.a, minimap);
-sampleLMDP(L, L.P, minimap);
+M = createMLMDP(minimaps, 1);
+M = solveMLMDP(M);
+
+% Create a MLMDP from multiple mazes;
+% assumes mazes represent a valid basis task set
+%
+function M = createMLMDP(maps, lambda)
+    M = [];
+    
+    for i = 1:numel(maps)
+        map = maps{i};
+        L = createLMDP(map, lambda);
+    
+        if isempty(M)
+            M = L;
+            M.Qb = L.qb;
+        else
+            assert(isequal(L.S, M.S));
+            assert(isequal(L.P, M.P));
+            assert(isequal(L.Pi, M.Pi));
+            assert(isequal(L.Pb, M.Pb));
+            assert(isequal(L.I, M.I));
+            assert(isequal(L.B, M.B));
+            assert(isequal(L.qi, M.qi));
+            
+            M.Qb = [M.Qb, L.qb];
+        end
+    end
+    
+    M.Nt = size(M.Qb, 2);
+    assert(M.Nt == numel(maps));
+end
+
+% Solve an initialized MLMDP
+%
+function M = solveMLMDP(M)
+    Z = [];
+    for i = 1:M.Nt
+        M.qb = M.Qb(:,i);
+        L = solveLMDP(M);
+        
+        if isempty(Z)
+            Z = L.z;
+        else
+            Z = [Z, L.z];
+        end
+    end    
+    assert(size(Z, 2) == M.Nt);
+    
+    M.Z = Z;
+end
 
 
 % Initialize an unsolved LMDP from a maze
@@ -37,9 +105,9 @@ function L = createLMDP(map, lambda)
     R = zeros(N, 1); % instantaneous reward f'n R(s)
     start = nan; % the starting state
     
-    absorbing = '$'; % squares that correspond to boundary states
-    passable = '.$X'; % squares that are correspond to passable / allowed states
+    absorbing = '0123456789$'; % squares that correspond to boundary states
     agent = 'X'; % the starting square
+    passable = ['.', agent, absorbing]; % squares that are correspond to passable / allowed states
     
     % adjacency list
     % each row = [dx, dy, non-normalized P(s'|s)]
@@ -56,11 +124,15 @@ function L = createLMDP(map, lambda)
     for x = 1:numel(map)
         for y = 1:numel(map{1})
             s = state(x, y);
-            fprintf('(%d, %d) --> %d = ''%c''\n', x, y, s, map{x}(y));
+            %fprintf('(%d, %d) --> %d = ''%c''\n', x, y, s, map{x}(y));
             assert(ismember(s, S));
             
             if ismember(map{x}(y), absorbing)
-                R(s) = 10; % $$$
+                if map{x}(y) == '$'
+                    R(s) = 10; % $$$
+                else
+                    R(s) = str2num(map{x}(y)); % e.g. 9 = $9
+                end
                 B = [B, s]; % boundary / absorbing / terminal state
                 continue;
             else
@@ -86,7 +158,7 @@ function L = createLMDP(map, lambda)
                 end
                 
                 new_s = state(new_x, new_y);
-                fprintf('      (%d, %d) --> %d = ''%c''\n', new_x, new_y, new_s, map{new_x}(new_y));
+                %fprintf('      (%d, %d) --> %d = ''%c''\n', new_x, new_y, new_s, map{new_x}(new_y));
                 assert(ismember(new_s, S));
                     
                 % passive transition f'n P(new_s|s)
@@ -127,7 +199,7 @@ end
 
 % Solve an initialized LMDP
 %
-function [a, z] = solveLMDP(L)
+function L = solveLMDP(L)
     Mi = diag(L.qi);
     zb = L.qb;
     Pi = L.Pi;
@@ -152,6 +224,9 @@ function [a, z] = solveLMDP(L)
         end
         a(:,s) = P(:,s) .* z / G(s);
     end
+    
+    L.z = z;
+    L.a = a;
 end
 
 % sample paths from a solved LMDP
