@@ -252,21 +252,33 @@ function M = solveMLMDP(M)
 end
 
 
+%
+% ---------------------------------- LMDPs -------------------------------
+%
+
+
+
 % Initialize an unsolved LMDP from a maze
 %
 function L = createLMDP(map, lambda)
     state = @(x, y) sub2ind(size(map), x, y);
     
-    N = numel(map); % number of states
+    absorbing = '-0123456789$'; % squares that correspond to boundary states
+    agent = 'X'; % the starting square
+    passable = ['.', agent, absorbing]; % squares that are correspond to passable / allowed states
+    
+    absorbing_squares = find(ismember(map, absorbing));
+    
+    Ni = numel(map); % internal states = all squares, including walls (useful for (x,y) --> state)
+    Nb = numel(absorbing_squares); % boundary states
+    N = Ni + Nb;
+    
     S = 1 : N; % set of states {s}
-    B = []; % set of boundary states
+    I = 1 : Ni; % set of internal states
+    B = Ni + 1 : Ni + Nb; % set of boundary states; they follow I in indexing, for convenience
     P = zeros(N, N); % passive transitions P(s'|s)
     R = zeros(N, 1); % instantaneous reward f'n R(s)
     start = nan; % the starting state
-    
-    absorbing = '0123456789$'; % squares that correspond to boundary states
-    agent = 'X'; % the starting square
-    passable = ['.', agent, absorbing]; % squares that are correspond to passable / allowed states
     
     % adjacency list
     % each row = [dx, dy, non-normalized P(s'|s)]
@@ -277,34 +289,61 @@ function L = createLMDP(map, lambda)
         0, -1, 1; ...
         1, 0, 1; ...
         0, 1, 1];
+    % small probability to go from an internal state to the boundary state
+    % for the corresponding square
+    %
+    adj_I_to_B = 0.1;
 
-    % iterate over all states s
+    % iterate over all internal states s
     %
     for x = 1:size(map, 1)
         for y = 1:size(map, 2)
             s = state(x, y);
             %fprintf('(%d, %d) --> %d = ''%c''\n', x, y, s, map(x, y));
             assert(ismember(s, S));
+            assert(ismember(s, I));
             
-            if ismember(map(x, y), absorbing)
-                if map(x, y) == '$'
-                    R(s) = 10; % $$$
-                else
-                    R(s) = str2num(map(x, y)); % e.g. 9 = $9
-                end
-                B = [B, s]; % boundary / absorbing / terminal state
-                continue;
-            else
-                R(s) = -1; % time is money
+            R(s) = -1; % time is money for internal states
+
+            % Check if there's a corresponding boundary state
+            %
+            b = find(s == absorbing_squares);
+            if ~isempty(b)
+                % There's also a boundary state in this square
+                %
+                assert(ismember(map(x, y), absorbing))
+                
+                b = b + Ni; % get the actual boundary state
+                P(b, s) = adj_I_to_B; % go to corresponding boundary state w/ small prob
+                
+                % Get the reward for the boundary state
+                %
+                switch map(x, y)
+                    case '$'
+                        R(b) = 10; % $$$
+                        
+                    case '-'
+                        R(b) = -Inf; % :(
+                        
+                    otherwise
+                        R(b) = str2num(map(x, y)); % e.g. 9 = $9
+                end   
             end
+
             if ismember(map(x, y), agent)
-                start = s; % starting state
-            end
-            if ~ismember(map(x, y), passable)
-                continue; % impassable state
+                % Starting state (for convenience; not really necessary)
+                %
+                start = s;
             end
             
-            % iterate over all adjacent states s --> s'
+            if ~ismember(map(x, y), passable)
+                % Impassable state e.g. wall -> no neighbors
+                %
+                continue;
+            end
+            
+            % Iterate over all adjacent states s --> s' and update passive
+            % dynamics P
             %
             for i = 1:size(adj, 1)
                 new_x = x + adj(i, 1);
@@ -313,12 +352,13 @@ function L = createLMDP(map, lambda)
                     continue % outside the map
                 end
                 if ~ismember(map(new_x, new_y), passable)
-                    continue; % impassable state
+                    continue; % impassable neighbor state s'
                 end
                 
                 new_s = state(new_x, new_y);
                 %fprintf('      (%d, %d) --> %d = ''%c''\n', new_x, new_y, new_s, map(new_x, new_y));
                 assert(ismember(new_s, S));
+                assert(ismember(new_s, I));
                     
                 % passive transition f'n P(new_s|s)
                 % will normalize later
@@ -330,17 +370,20 @@ function L = createLMDP(map, lambda)
         end
     end
     
-    I = setdiff(S, B); % set of internal states 
+    assert(isequal(I, setdiff(S, B)));
     q = exp(R / lambda); % exponentiated reward f'n
     
     % return LMDP
     %
     L.N = N;
     L.S = S;
-    L.Nb = numel(B); % number of boundary states
+    L.Nb = Nb;
     L.B = B;
-    L.Ni = numel(I); % number of internal states
+    L.Ni = Ni;
     L.I = I;
+    assert(Ni == numel(I));
+    assert(Nb == numel(B));
+    assert(N == numel(S));
     
     L.P = P;
     L.Pb = P(B, I); % P(s'|s) for s' in B and s in I
@@ -369,6 +412,7 @@ function L = solveLMDP(L)
     % find desirability f'n z
     %
     z = zeros(N, 1);
+    save shit.mat;
     zi = inv(eye(L.Ni) - Mi * Pi') * (Mi * Pb' * zb);
     z(L.I) = zi;
     z(L.B) = zb;
@@ -400,10 +444,22 @@ function sampleLMDP(L, a, map)
     empty = '.';
     
     disp(map);
-    while ~ismember(s, L.B)
-        new_s = samplePF(a(:,s));
-        
+    while true
+        r = r + L.R(s);
         [x, y] = get_coords(s);
+        
+        new_s = samplePF(a(:,s));        
+        
+        if ismember(new_s, L.B)
+            % Boundary state
+            %
+            fprintf('(%d, %d) --> END\n', x, y);
+            r = r + L.R(new_s);
+            break;
+        end
+
+        % Internal state
+        %
         [new_x, new_y] = get_coords(new_s);
         
         map(x, y) = empty;
@@ -411,9 +467,8 @@ function sampleLMDP(L, a, map)
         
         fprintf('(%d, %d) --> (%d, %d)\n', x, y, new_x, new_y);
         disp(map);
-        s = new_s;
         
-        r = r + L.R(s);
+        s = new_s;        
     end
     fprintf('Total reward: %d\n', r);
 end
