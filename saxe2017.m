@@ -50,16 +50,22 @@ map = [
     '#..$.#..........#$#';
     '###################'];
 
-
+% Test LMDP
+%
 L = createLMDP(minimap, 1);
 L = solveLMDP(L);
 sampleLMDP(L, L.a, minimap);
 %sampleLMDP(L, L.P, minimap);
 
-%M = createMLMDP(minimaps, 1);
-%M = solveMLMDP(M);
+% Test multitask LMDP
+%
+M = createMLMDP(minimaps, 1);
+M = solveMLMDP(M);
 
+% Test hierarchical multitask LMDP
+%
 M = createHMLMDP(rooms, 1);
+M{1} = solveMLMDP(M{1});
 
 % Create a hierarchical MLMDP from a maze
 %
@@ -72,7 +78,7 @@ function M = createHMLMDP(map, lambda)
     subtasks = find(map == 'S');
     map(subtasks) = '.'; % erase subtask states
     for g = goals'
-        map(goals) = '0'; % zero out all goals (but keep 'em as goals)
+        map(goals) = '0'; % zero out all goals (but keep 'em as goals) TODO technically should be -1
         map(g) = '$'; % ...except for one
         maps = [maps; {map}];
     end
@@ -82,14 +88,66 @@ function M = createHMLMDP(map, lambda)
     
     % Create MLMDP from basis tasks based on reward locations only
     %
-    M{1} = createMLMDP(maps, lambda);
+    M = createMLMDP(maps, lambda);
     
     % Augment it based on the subtask locations
     %
-    M{1} = augmentMLMDP(M{1}, map, lambda);
+    M = augmentMLMDP(M, map, lambda);
     
+    % Create second level of hierarchy
     %
+    I = 1:numel(M.St); % I of next level = St of lower level, but remapped to 1..Nt
+    B = numel(I) + 1 : numel(I) + size(M.Pb, 1); % B of next level = B of lower level, also remapped
+    S = [I B];
+    Pi = M.Pt * inv(eye(M.Ni) - M.Pi) * M.Pt';
+    Pb = M.Pb * inv(eye(M.Ni) - M.Pi) * M.Pt';
+    P = [Pi; Pb];
+    P = P ./ sum(P, 1); % normalize
+    P(isnan(P)) = 0;
+    P = [P zeros(size(P, 1), size(M.Pb, 1))]; % prob B --> anything = 0
+
+    % Define instantaneous rewards 
     %
+    R = zeros(numel(S), 1);
+    R(I) = -1;
+    R(B) = 1;
+    q = exp(R / lambda);
+
+    % Define subtasks Qb
+    %
+    R(B) = 0;
+    Qb = [];
+    for b = B
+        R(b) = 1;
+        q = exp(R / lambda);
+        qb = q(B);
+        Qb = [Qb, qb];
+        R(b) = 0;
+    end
+   
+    % create struct for level 2
+    %
+    M2.N = numel(S);
+    M2.S = S;
+    M2.Nb = numel(B);
+    M2.B = B;
+    M2.Ni = numel(I);
+    M2.I = I;
+
+    M2.P = P;
+    M2.Pb = Pb;
+    M2.Pi = Pi;
+
+    M2.R = R;
+    M2.qi = q(I);
+
+    M2.lambda = lambda;
+
+    M2.Qb = Qb;
+
+    % Stack hierarchy
+    %
+    M = {M, M2};
 end
 
 % Augment a MLMDP with subtasks from a maze;
@@ -128,7 +186,7 @@ function M = augmentMLMDP(M, map, lambda)
     M.S = [M.S, St]; % new S = S union St
     M.N = M.N + Nt;
 
-    M.B = [M.B, St]; % new B = B union St (!!!)
+    M.B = [M.B, St]; % new B = B union St (!!!) technically wrong, but necessary to work with solveMLMDP
     M.Nb = M.Nb + Nt;
   
     % Augment passive dynamics
@@ -139,7 +197,7 @@ function M = augmentMLMDP(M, map, lambda)
     P = P ./ sum(P, 1); % normalize
     P(isnan(P)) = 0; % fix the 0/0's
     M.P = P;
-    M.Pt = M.P(M.St, :);
+    M.Pt = M.P(M.St, M.I);
     assert(isequal(M.P(M.St, Mt.B), eye(Nt) * 0.5));
 end
 
