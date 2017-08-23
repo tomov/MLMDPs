@@ -66,6 +66,7 @@ M1 = solveMLMDP(M1);
 %
 M = createHMLMDP(rooms, 1);
 M{1} = solveMLMDP(M{1});
+M{2} = solveMLMDP(M{2});
 
 % Create a hierarchical MLMDP from a maze
 %
@@ -101,32 +102,34 @@ function M = createHMLMDP(map, lambda)
     % Create second level of hierarchy
     %
     I = 1:numel(M.St); % I of next level = St of lower level, but remapped to 1..Nt
-    B = numel(I) + 1 : numel(I) + size(M.Pb, 1); % B of next level = B of lower level, also remapped
+    %B = numel(I) + 1 : numel(I) + size(M.Pb, 1); % B of next level = B of lower level, also remapped
+    B = numel(I) + 1 : 2 * numel(I);
     S = [I B];
-    Pi = M.Pt * inv(eye(M.Ni) - M.Pi) * M.Pt';
-    Pb = M.Pb * inv(eye(M.Ni) - M.Pi) * M.Pt';
+    Pi = M.Pt * inv(eye(M.Ni) - M.Pi) * M.Pt'; % I --> I from low-level dynamics
+    %Pb = M.Pb * inv(eye(M.Ni) - M.Pi) * M.Pt';
+    Pb = eye(numel(I)) * 0.1; % small prob I --> B
     P = [Pi; Pb];
     P = P ./ sum(P, 1); % normalize
     P(isnan(P)) = 0;
-    P = [P zeros(size(P, 1), size(M.Pb, 1))]; % prob B --> anything = 0
+    P = [P zeros(size(P, 1), numel(B))]; % prob B --> anything = 0
 
     % Define instantaneous rewards 
     %
     R = zeros(numel(S), 1);
-    R(I) = -1;
+    R(I) = -1; % time is money
     R(B) = 1;
     q = exp(R / lambda);
 
-    % Define subtasks Qb
+    % Define subtasks Qb = eye(Nb)
     %
-    R(B) = 0;
+    R(B) = -Inf;
     Qb = [];
     for b = B
-        R(b) = 1;
+        R(b) = 0;
         q = exp(R / lambda);
         qb = q(B);
         Qb = [Qb, qb];
-        R(b) = 0;
+        R(b) = -Inf;
     end
    
     % create struct for level 2
@@ -184,9 +187,9 @@ function M = augmentMLMDP(M, map, lambda)
     %
     M.St = St;
     M.Qt = Qt;
-    M.Qb = [Qb zeros(M.Nb, numel(St)); zeros(numel(St), M.Nt) Qt]; % new Qb = [Qb 0; 0; Qt]
+    M.Qb = [Qb zeros(M.Nb, numel(St)); zeros(numel(St), size(Qb, 2)) Qt]; % new Qb = [Qb 0; 0; Qt]
     
-    M.Nt = M.Nt + Nt; % Note: M.Nt != numel(M.St) !!!
+    M.Nt = Nt; % Note this is the number of subtasks NOT the number of tasks! i.e. = |St| NOT |B| = |old B| + |St|
 
     M.S = [M.S, M.St]; % new S = S union St
     M.N = M.N + Nt;
@@ -249,15 +252,14 @@ function M = createMLMDP(maps, lambda)
         end
     end
     
-    M.Nt = size(M.Qb, 2);
-    assert(M.Nt == numel(maps));
+    assert(size(M.Qb, 2) == numel(maps));
 end
 
 % Solve an initialized MLMDP
 %
 function M = solveMLMDP(M)
     Z = [];
-    for i = 1:M.Nt
+    for i = 1:size(M.Qb,2) % for each subtask
         M.qb = M.Qb(:,i); % subtask i
         L = solveLMDP(M);
         
@@ -267,7 +269,7 @@ function M = solveMLMDP(M)
             Z = [Z, L.z];
         end
     end    
-    assert(size(Z, 2) == M.Nt);
+    assert(size(Z, 2) == size(M.Qb, 2));
     
     M.Z = Z;
 end
