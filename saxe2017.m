@@ -1,4 +1,4 @@
-%
+% rooms domain map from Saxe et al. 2017
 %
 rooms = [
     'S....#.....';
@@ -8,10 +8,10 @@ rooms = [
     '.....#.....';
     '#.####X....';
     '.....###.##';
-    '$.#..#...S.';
+    '..#..#...S.';
     '..#..#.....';
     '..S....S#..';
-    '.....#..$..'];
+    '.....#.....'];
 
 % single task for LMDP
 %
@@ -59,8 +59,8 @@ sampleLMDP(L, L.a, minimap);
 
 % Test multitask LMDP
 %
-M = createMLMDP(minimaps, 1);
-M = solveMLMDP(M);
+M1 = createMLMDP(minimaps, 1);
+M1 = solveMLMDP(M1);
 
 % Test hierarchical multitask LMDP
 %
@@ -74,16 +74,18 @@ function M = createHMLMDP(map, lambda)
     % where each task = go to a single reward location
     %
     maps = {};
-    goals = find(map == '$');
-    subtasks = find(map == 'S');
-    map(subtasks) = '.'; % erase subtask states
-    for g = goals'
-        map(goals) = '0'; % zero out all goals (but keep 'em as goals) TODO technically should be -1
-        map(g) = '$'; % ...except for one
+    boundary = find(map ~= '#');
+    original_map = map;
+    % Make all passable squares boundary states (in addition to internal states)
+    % Then create a task for each boundary state s.t. its reward = 0 and
+    % all other boundary state have reward = -Inf
+    %
+    for g = boundary'
+        map(boundary) = '-'; % all boundary squares are -Inf
+        map(g) = '0'; % ...except the 'goal' boundary state for this task
         maps = [maps; {map}];
     end
-    map(goals) = '$'; % restore reward states
-    map(subtasks) = 'S'; % restore subtask states
+    map = original_map; % restore map
     assert(~isempty(maps));
     
     % Create MLMDP from basis tasks based on reward locations only
@@ -92,6 +94,8 @@ function M = createHMLMDP(map, lambda)
     
     % Augment it based on the subtask locations
     %
+    subtasks = find(map == 'S');
+    assert(~isempty(subtasks));
     M = augmentMLMDP(M, map, lambda);
     
     % Create second level of hierarchy
@@ -161,8 +165,8 @@ function M = augmentMLMDP(M, map, lambda)
     subtasks = find(map == 'S');
     map(goals) = '.'; % erase all goal states
     for s = subtasks'
-        map(subtasks) = '0'; % zero out all subtask states (but keep 'em as goals)
-        map(s) = '1'; % ...except for one
+        map(subtasks) = '-'; % zero out all subtask states (but keep 'em as goals)
+        map(s) = '0'; % ...except for one
         maps = [maps; {map}];
     end
     assert(~isempty(maps));
@@ -181,25 +185,42 @@ function M = augmentMLMDP(M, map, lambda)
     M.St = St;
     M.Qt = Qt;
     M.Qb = [Qb zeros(M.Nb, numel(St)); zeros(numel(St), M.Nt) Qt]; % new Qb = [Qb 0; 0; Qt]
+    
     M.Nt = M.Nt + Nt; % Note: M.Nt != numel(M.St) !!!
 
-    M.S = [M.S, St]; % new S = S union St
+    M.S = [M.S, M.St]; % new S = S union St
     M.N = M.N + Nt;
 
-    M.B = [M.B, St]; % new B = B union St (!!!) technically wrong, but necessary to work with solveMLMDP
+    M.B = [M.B, M.St]; % new B = B union St (!!!) technically wrong, but necessary to work with solveMLMDP
     M.Nb = M.Nb + Nt;
-  
+    
+    % Find internal states that have corresponding subtask states (i.e.
+    % boundary states in the helper Mt)
+    % There should be 1 per boundary state (see createLMDP)
+    %
+    [x, y] = ind2sub(size(Mt.P(Mt.B,:)), find(Mt.P(Mt.B,:) ~= 0));
+    assert(numel(x) == Mt.Nb); % by our design
+    I_under_St = y';
+    
     % Augment passive dynamics
     %
     P = [M.P zeros(size(M.P, 1), M.N - size(M.P, 2)); zeros(Nt, M.N)];
-    ind = sub2ind(size(P), St, Mt.B); 
-    P(ind) = 1; % P(subtask state | corresponing square) = 0.5, after normalization
+    ind = sub2ind(size(P), St, I_under_St); 
+    P(ind) = 1; % P(subtask state | corresponing internal state) = 0.5, after normalization
     P = P ./ sum(P, 1); % normalize
     P(isnan(P)) = 0; % fix the 0/0's
     M.P = P;
     M.Pt = M.P(M.St, M.I);
-    assert(isequal(M.P(M.St, Mt.B), eye(Nt) * 0.5));
+    M.Pb = M.P(M.B, M.I); % new B = B union St ! see above
+    
+    assert(isequal(M.P(M.St, I_under_St), eye(Nt) * 0.5));
 end
+
+
+%
+% ---------------------------------- Multitask LMDPs -------------------------------
+%
+
 
 
 % Create a MLMDP from multiple mazes;
@@ -237,7 +258,7 @@ end
 function M = solveMLMDP(M)
     Z = [];
     for i = 1:M.Nt
-        M.qb = M.Qb(:,i);
+        M.qb = M.Qb(:,i); % subtask i
         L = solveLMDP(M);
         
         if isempty(Z)
