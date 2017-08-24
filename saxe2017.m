@@ -1,17 +1,17 @@
 % rooms domain map from Saxe et al. 2017
 %
 rooms = [
-    'S....#.....';
+    'SX...#.....';
     '.....#.....';
     '..#S.......';
     '.#...#.S##.';
     '.....#.....';
-    '#.####X....';
+    '#.####.....';
     '.....###.##';
     '..#..#...S.';
     '..#..#.....';
     '..S....S#..';
-    '.....#.....'];
+    '.....#..$..'];
 
 % single task for LMDP
 %
@@ -65,8 +65,10 @@ M1 = solveMLMDP(M1);
 % Test hierarchical multitask LMDP
 %
 M = createHMLMDP(rooms, 1);
-M{1} = solveMLMDP(M{1});
-M{2} = solveMLMDP(M{2});
+%M{1} = solveMLMDP(M{1});
+%M{2} = solveMLMDP(M{2});
+fprintf('\n\n\n\n -------------------------- \n\n\n\n');
+M = solveHMLMDP(M, rooms, 1);
 
 % Create a hierarchical MLMDP from a maze
 %
@@ -101,13 +103,24 @@ function M = createHMLMDP(map, lambda)
     
     % Create second level of hierarchy
     %
-    I = 1:numel(M.St); % I of next level = St of lower level, but remapped to 1..Nt
+    M2 = nextMLMDP(M, lambda);
+
+    % Stack hierarchy
+    %
+    M = {M, M2};
+end
+
+% Take a low-level MLMDP initialized from a maze
+% and construct the higher-level MLMDP
+%
+function M2 = nextMLMDP(M1, lambda)
+    I = 1:numel(M1.St); % I of next level = St of lower level, but remapped to 1..Nt
     %B = numel(I) + 1 : numel(I) + size(M.Pb, 1); % B of next level = B of lower level, also remapped
     B = numel(I) + 1 : 2 * numel(I);
     S = [I B];
-    Pi = M.Pt * inv(eye(M.Ni) - M.Pi) * M.Pt'; % I --> I from low-level dynamics
+    Pi = M1.Pt * inv(eye(M1.Ni) - M1.Pi) * M1.Pt'; % I --> I from low-level dynamics
     %Pb = M.Pb * inv(eye(M.Ni) - M.Pi) * M.Pt';
-    Pb = eye(numel(I)) * 0.1; % small prob I --> B
+    Pb = eye(numel(I)) * 0.05; % small prob I --> B #KNOB
     P = [Pi; Pb];
     P = P ./ sum(P, 1); % normalize
     P(isnan(P)) = 0;
@@ -116,8 +129,8 @@ function M = createHMLMDP(map, lambda)
     % Define instantaneous rewards 
     %
     R = zeros(numel(S), 1);
-    R(I) = -1; % time is money
-    R(B) = 1;
+    R(I) = -1; % time is money #KNOB
+    R(B) = 1; % #KNOB
     q = exp(R / lambda);
 
     % Define subtasks Qb = eye(Nb)
@@ -125,11 +138,11 @@ function M = createHMLMDP(map, lambda)
     R(B) = -Inf;
     Qb = [];
     for b = B
-        R(b) = 0;
+        R(b) = 0; % #KNOB
         q = exp(R / lambda);
         qb = q(B);
         Qb = [Qb, qb];
-        R(b) = -Inf;
+        R(b) = -Inf; % #KNOB
     end
    
     % create struct for level 2
@@ -151,10 +164,6 @@ function M = createHMLMDP(map, lambda)
     M2.lambda = lambda;
 
     M2.Qb = Qb;
-
-    % Stack hierarchy
-    %
-    M = {M, M2};
 end
 
 % Augment a MLMDP with subtasks from a maze;
@@ -209,16 +218,153 @@ function M = augmentMLMDP(M, map, lambda)
     %
     P = [M.P zeros(size(M.P, 1), M.N - size(M.P, 2)); zeros(Nt, M.N)];
     ind = sub2ind(size(P), St, I_under_St); 
-    P(ind) = 1; % P(subtask state | corresponing internal state) = 0.5, after normalization
+    P(ind) = 0.1; % P(subtask state | corresponing internal state) = s.th. small #KNOB
     P = P ./ sum(P, 1); % normalize
     P(isnan(P)) = 0; % fix the 0/0's
     M.P = P;
     M.Pt = M.P(M.St, M.I);
     M.Pb = M.P(M.B, M.I); % new B = B union St ! see above
     
-    assert(isequal(M.P(M.St, I_under_St), eye(Nt) * 0.5));
+    %assert(isequal(M.P(M.St, I_under_St), eye(Nt) * 0.05));
 end
 
+
+function M = solveHMLMDP(M, map, lambda)
+    start = find(map == 'X');
+    goal = find(map == '$');
+    get_coords = @(s) ind2sub(size(map), s);
+    
+    % Solve MLMDPs for their basis set of tasks
+    %
+    M{1} = solveMLMDP(M{1});
+    M{2} = solveMLMDP(M{2});
+   
+    % Set up starting state
+    %
+    s = start; % starting state; should be in I
+    assert(ismember(s, M{1}.I));
+    
+    % Set up goal state
+    %
+    e = find(goal == M{1}.absorbing_squares); % ending state; should be in B 
+    assert(~isempty(e));
+    e = e + M{1}.Ni; % by design, that's the corresponding B state
+    assert(ismember(e, M{1}.B));
+    
+    % Find basis task weights based on goal state
+    %
+    r = (-Inf) * ones(M{1}.N, 1); % rewards
+    r(e) = 0; % #KNOB
+    r(M{1}.St) = -10; % #KNOB TODO ?????
+    q = exp(r / lambda);
+    q(M{1}.I) = M{1}.qi;
+    qb = q(M{1}.B); % boundary states only
+    w = pinv(M{1}.Qb) * qb; % Eq 7 from Saxe et al 2017
+    
+    % Find the desirabiltiy f'n and actions based on the basis task weights
+    % Sec 2.3 from Saxe et al (2017)
+    %
+    zi = M{1}.Zi * w;
+    z(M{1}.I) = zi;
+    z(M{1}.B) = qb;
+    a = policy(M{1}.P, z');
+    
+    % Set up actual rewards
+    %
+    R_tot = 0; % total rewards
+    R = M{1}.R(M{1}.I); % rewards for 'real' states = internal states = the squares in the grid = -1
+    R(goal) = 20; % #KNOB
+    
+    % Solve the hierarchical multitask LMDP
+    % Algorithm 1 from Saxe et al (2017) supplement
+    %
+    iter = 1;
+    while true
+        [x, y] = get_coords(s);
+        
+        R_tot = R_tot + R(s);
+        
+        new_s = samplePF(a(:,s));
+        
+        if ismember(new_s, M{1}.I) 
+            % Internal state -> just move to it
+            %
+            [new_x, new_y] = get_coords(new_s);
+            
+            fprintf('(%d, %d) --> (%d, %d)\n', x, y, new_x, new_y);
+            map(s) = '.';
+            map(new_s) = 'X';
+            disp(map);
+            
+            s = new_s;
+            
+        elseif ismember(new_s, M{1}.St)
+            % Higher layer state i.e. subtask state
+            %
+            s2 = find(new_s == M{1}.St); % mapping from St to I of next level; by design
+            
+            fprintf('NEXT LEVEL! (%d, %d) --> %d !!!\n', x, y, s2);
+            
+            rb2 = [1 2 3 4 5 6]' - 10; % TODO HARDCODED FIXME
+            qb2 = exp(rb2 / lambda);
+            w2 = pinv(M{2}.Qb) * qb2; % Eq 7 from Saxe et al 2017
+
+            % Find the desirabiltiy f'n and actions based on the basis task weights
+            % Sec 2.3 from Saxe et al (2017)
+            %
+            zi2 = M{2}.Zi * w2;
+            z2(M{2}.I) = zi2;
+            z2(M{2}.B) = qb2;
+            a2 = policy(M{2}.P, z2');
+                        
+            while true
+                new_s2 = samplePF(a2(:, s2));
+                
+                if ismember(new_s2, M{2}.I)
+                    fprintf('         %d --> %d\n', s2, new_s2);
+                    
+                    s2 = new_s2;
+                else
+                    fprintf('         %d --> BOUNDARY --> back to lower level\n', s2);
+                    
+                    % Boundary state => recalculate boundary rewards and actions at
+                    % lower level
+                    %
+                    % # KNOB
+                    rt = 0.5 * (a(M{2}.I, s2) - M{2}.Pi(:, s2)); % Eq 10 -- notce it's s2 and not new_s2 b/c new_s2 is in B and has nothing coming out of it...
+                    
+                    % Sec 2.3
+                    r(M{1}.St) = rt;
+                    q = exp(r / lambda);
+                    q(M{1}.I) = M{1}.qi;
+                    qb = q(M{1}.B); % boundary states only
+                    w = pinv(M{1}.Qb) * qb; % Eq 7 from Saxe et al 2017
+                    
+                    zi = M{1}.Zi * w;
+                    z(M{1}.I) = zi;
+                    z(M{1}.B) = qb;
+                    a = policy(M{1}.P, z');
+                    
+                    save shit.mat
+                    
+                    break;
+                end
+            end
+            
+        else % NOTE: B includes St too! which is why we check it last
+            % Terminal boundary state
+            %
+            fprintf('(%d, %d) --> END\n', x, y);
+            break;
+        end
+        
+        
+        iter = iter + 1;
+        if iter >= 20, break; end
+    end
+    
+    fprintf('Total reward: %d\n', R_tot);
+end
 
 %
 % ---------------------------------- Multitask LMDPs -------------------------------
@@ -258,20 +404,25 @@ end
 % Solve an initialized MLMDP
 %
 function M = solveMLMDP(M)
-    Z = [];
+    Zi = [];
+    a = [];
     for i = 1:size(M.Qb,2) % for each subtask
         M.qb = M.Qb(:,i); % subtask i
         L = solveLMDP(M);
         
-        if isempty(Z)
-            Z = L.z;
+        if isempty(Zi)
+            Zi = L.z(L.I);
+            a = L.a;
         else
-            Z = [Z, L.z];
+            Zi = [Zi, L.z(L.I)];
+            a(:,:,i) = L.a;
         end
     end    
-    assert(size(Z, 2) == size(M.Qb, 2));
+    assert(size(Zi, 2) == size(M.Qb, 2));
+    assert(size(Zi, 1) == M.Ni);
     
-    M.Z = Z;
+    M.Zi = Zi;
+    M.a = a;
 end
 
 
@@ -315,7 +466,7 @@ function L = createLMDP(map, lambda)
     % small probability to go from an internal state to the boundary state
     % for the corresponding square
     %
-    adj_I_to_B = 0.1;
+    adj_I_to_B = 0.1; % #KNOB
 
     % iterate over all internal states s
     %
@@ -343,13 +494,13 @@ function L = createLMDP(map, lambda)
                 %
                 switch map(x, y)
                     case '$'
-                        R(b) = 10; % $$$
+                        R(b) = 10; % $$$ #KNOB
                         
                     case '-'
-                        R(b) = -Inf; % :(
+                        R(b) = -Inf; % :( #KNOB
                         
                     otherwise
-                        R(b) = str2num(map(x, y)); % e.g. 9 = $9
+                        R(b) = str2num(map(x, y)); % e.g. 9 = $9 #KNOB
                 end   
             end
 
@@ -419,6 +570,9 @@ function L = createLMDP(map, lambda)
     
     L.start = start;
     L.lambda = lambda;
+    L.absorbing_squares = absorbing_squares;
+    
+    sanityLMDP(L, map);
 end
 
 
@@ -435,24 +589,77 @@ function L = solveLMDP(L)
     % find desirability f'n z
     %
     z = zeros(N, 1);
-    save shit.mat;
-    zi = inv(eye(L.Ni) - Mi * Pi') * (Mi * Pb' * zb);
+    zi = inv(eye(L.Ni) - Mi * Pi') * (Mi * Pb' * zb); % Eq 4 from Saxe et al (2017)
     z(L.I) = zi;
     z(L.B) = zb;
         
     % find optimal policy a*
     %
+    a = policy(P, z);
+    
+    L.z = z;
+    L.a = a;
+end
+
+% Sanity check that a LMDP is correct
+%
+function sanityLMDP(L, map)
+    % States
+    %
+    assert(L.N == size(L.S, 2));
+    assert(size(L.S, 1) == 1);
+    assert(L.Ni == size(L.I, 2));
+    assert(size(L.I, 1) == 1);
+    assert(L.Nb == size(L.B, 2));
+    assert(size(L.B, 1) == 1);
+    
+    % States <--> maze -- these are our custom things designed for the task
+    %
+    assert(isequal(L.I, 1:numel(map)));
+    assert(max(L.I) < min(L.B));
+    assert(numel(L.absorbing_squares) == L.Nb);
+    assert(sum(ismember(L.absorbing_squares, L.I)) == L.Nb);
+    
+    % Transition dynamics
+    %
+    assert(size(L.P, 1) == L.N);
+    assert(size(L.P, 2) == L.N);
+    assert(size(L.Pi, 1) == L.Ni);
+	assert(size(L.Pi, 2) == L.Ni);
+    assert(size(L.Pb, 1) == L.Nb);
+	assert(size(L.Pb, 2) == L.Ni);
+    assert(isequal(L.P(L.I, L.I), L.Pi));
+    assert(isequal(L.P(L.B, L.I), L.Pb));
+    
+    % Rewards
+    %
+    assert(size(L.R, 1) == L.N);
+    assert(size(L.R, 2) == 1);
+    assert(size(L.q, 1) == L.N);
+    assert(size(L.q, 2) == 1);
+    assert(size(L.qi, 1) == L.Ni);
+    assert(size(L.qi, 2) == 1);
+    assert(size(L.qb, 1) == L.Nb);
+    assert(size(L.qb, 2) == 1);
+    assert(isequal(L.q(L.I), L.qi));
+    assert(isequal(L.q(L.B), L.qb));
+end
+
+% Compute an optimal policy a*(s',s) from passive transition dynamics P(s'|s)
+% and a desirability f'n z(s)
+%
+function a = policy(P, z)
+    assert(size(z, 2) == 1);
+    
+    N = size(z, 1);
     a = zeros(N, N);
     G = @(s) sum(P(:,s) .* z);
     for s = 1:N
         if G(s) == 0
             continue;
         end
-        a(:,s) = P(:,s) .* z / G(s);
+        a(:,s) = P(:,s) .* z / G(s); % Eq 6 from Saxe et al (2017)
     end
-    
-    L.z = z;
-    L.a = a;
 end
 
 % sample paths from a solved LMDP
