@@ -1,3 +1,5 @@
+% Multitask MLMDP as described in Saxe et al (2017)
+%
 classdef MLMDP < LMDP
 
     properties (Constant = true)

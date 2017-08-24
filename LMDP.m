@@ -1,3 +1,6 @@
+% LMDP as described in Saxe et al (2017).
+% Customized to work with the 'rooms' domain only
+%
 classdef LMDP < handle
 
     properties (Constant = true)
@@ -15,9 +18,9 @@ classdef LMDP < handle
 
         % Unnormalized transition probabilities
         %
-        P_stay_in_place = 2; % P(s|s)
-        P_move_to_neighbor = 1; % random walk
-        P_move_to_B = 0.1; % move from I state to corresponding B state
+        P_I_to_self = 2; % P(s|s)
+        P_I_to_neighbor = 1; % random walk
+        P_I_to_B = 0.1; % move from I state to corresponding B state
     end
 
     properties (Access = public)
@@ -75,11 +78,11 @@ classdef LMDP < handle
             % each row = [dx, dy, non-normalized P(s'|s)]
             % => random walk, but also bias towards staying in 1 place
             %
-            adj = [0, 0, self.P_stay_in_place; ...
-                -1, 0, self.P_move_to_neighbor; ...
-                0, -1, self.P_move_to_neighbor; ...
-                1, 0, self.P_move_to_neighbor; ...
-                0, 1, self.P_move_to_neighbor];
+            adj = [0, 0, self.P_I_to_self; ...
+                -1, 0, self.P_I_to_neighbor; ...
+                0, -1, self.P_I_to_neighbor; ...
+                1, 0, self.P_I_to_neighbor; ...
+                0, 1, self.P_I_to_neighbor];
 
             % iterate over all internal states s
             %
@@ -101,7 +104,7 @@ classdef LMDP < handle
                         assert(ismember(map(x, y), self.absorbing_symbols));
 
                         b = I2B(s);
-                        P(b, s) = self.P_move_to_B; % go to corresponding boundary state w/ small prob
+                        P(b, s) = self.P_I_to_B; % go to corresponding boundary state w/ small prob
                         
                         % Get the reward for the boundary state
                         %
