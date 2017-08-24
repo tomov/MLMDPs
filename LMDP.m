@@ -15,8 +15,8 @@ classdef LMDP < handle
 
         % Unnormalized transition probabilities
         %
-        P_stay_in_place = 2;
-        P_move_to_neighbor = 1;
+        P_stay_in_place = 2; % P(s|s)
+        P_move_to_neighbor = 1; % random walk
         P_move_to_B = 0.1; % move from I state to corresponding B state
     end
 
@@ -157,14 +157,14 @@ classdef LMDP < handle
             self.P = P;
             self.R = R;
             self.q = q;
-            
-            self.sanity();
+
+            self.sanityLMDP();
         end
 
 
         % Solve an initialized LMDP
         %
-        function solve(self)
+        function solveLMDP(self)
             qi = self.q(self.I);
             qb = self.q(self.B);
             Pi = self.P(self.I, self.I);
@@ -179,7 +179,6 @@ classdef LMDP < handle
             z = nan(N, 1);
             zb = qb; % boundary states are absorbing -> V(s) = R(s) for s in B
             zi = inv(eye(Ni) - Mi * Pi') * (Mi * Pb' * zb); % Eq 4 from Saxe et al (2017)
-            save shit.mat;
             z(self.I) = zi;
             z(self.B) = zb;
             self.z = z;
@@ -188,6 +187,8 @@ classdef LMDP < handle
             %
             a = self.policy(z);
             self.a = a;
+
+            self.sanityLMDP();
         end
 
         % Compute an optimal policy a*(s',s) from passive transition dynamics P(s'|s)
@@ -206,8 +207,6 @@ classdef LMDP < handle
                 end
                 a(:,s) = self.P(:,s) .* z / G(s); % Eq 6 from Saxe et al (2017)
             end
-
-            self.sanity();
         end
 
         % sample paths from a solved LMDP
@@ -270,7 +269,7 @@ classdef LMDP < handle
 
         % Sanity check that a LMDP is correct
         %
-        function sanity(self)
+        function sanityLMDP(self)
             % States
             %
             N = numel(self.S);
