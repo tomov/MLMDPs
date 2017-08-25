@@ -11,6 +11,7 @@ classdef MLMDP < LMDP
         qi = []; % exponentiated rewards for internal states only
         Qb = []; % exponentiated rewards for boundary states (row) for each task (col)
         Zi = []; % desirability function for all states (row) each task (col)
+        w = []; % basis task weights that were used for the last task
     end
 
     methods 
@@ -83,6 +84,7 @@ classdef MLMDP < LMDP
 
             qb = exp(rb / self.lambda);
             w = pinv(self.Qb) * qb; % Eq 7 from Saxe et al (2017)
+            self.w = w;
 
             % find desirability f'n z
             %

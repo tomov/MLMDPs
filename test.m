@@ -56,3 +56,17 @@ map = [
     '0.S.0'];
 H = HMLMDP(map);
 H.solve();
+
+
+
+%% HMLMDP
+%
+
+fprintf('\n\n\n\n\n\n\n\n--------------------------------- Big HMLMDP ----------------------------------\n\n\n\n\n\n\n');
+
+map = [
+    '$####';
+    'S#X..';
+    '0.S.0'];
+H = HMLMDP(map);
+H.solve();

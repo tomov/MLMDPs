@@ -4,15 +4,19 @@ classdef HMLMDP
         subtask_symbol = 'S';
         goal_symbol = '$'; % we use absorbing_symbol to distinguish all boundary states, however not all of them are goals in the actual task.
 
-        R_goal = 3; % the actual reward for completing the task; shouldn't matter much (0 should work too); interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
+        R_goal = 3; % the actual reward for completing the task; don't confuse with R_B_goal; interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
+        R_nongoal = 0; % the rewards at the other boundary states for the task; not to be confused with R_B_nongoal
         R_St = -1; % reward for St states to encourage entering them every now and then; determines at(:,:); too high -> keeps entering St state; too low -> never enters St state... TODO
 
-        rt_coef = 100; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
+        rt_coef = 10; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
+        rb_next_level_coef = 10; % coefficient by which to scale rb_next_level
     end
 
     properties (Access = public)
         M = []; % current level (augmented) MLMDP
         next = []; % next level HMLMDP #recursion
+
+        Ptb = []; % probability of ending at a given B state under passive dynamics, given that we've started at a St state. Used to compute the next-level boundary rewards
     end
 
     methods 
@@ -42,16 +46,25 @@ classdef HMLMDP
                 M1_Ni = numel(M1.I);
                 M1_Pi = M1.P(M1.I, M1.I);
                 M1_Pt = M1.P(M1.St, M1.I);
-                Pi = M1_Pt * inv(eye(M1_Ni) - M1_Pi) * M1_Pt'; % I --> I from low-level dynamics, Eq 8 from Saxe et al (2017)
-                % note the diagonal entries of Pi will be high (b/c random walk likes to stay around same place rather than go to another specific St state) -> this is crucial; b/c then the active dynamics will prefer going elsewhere -> ai(:,s) - Pi(:,s) will be large negative -> it will discourage agent from wandering back into the same state
+                M1_Pb = M1.P(setdiff(M1.B, M1.St), M1.I); % note we exclude St from these
+
+                Pi = M1_Pt * inv(eye(M1_Ni) - M1_Pi) * M1_Pt'; % I --> I from low-level dynamics, Eq 8 from Saxe et al (2017) % note the diagonal entries of Pi will be high (b/c random walk likes to stay around same place rather than go to another specific St state) -> this is crucial; b/c then the active dynamics will prefer going elsewhere -> ai(:,s) - Pi(:,s) will be large negative -> it will discourage agent from wandering back into the same state
                 %Pb = M1.Pb * inv(eye(M1.Ni) - M1.Pi) * M1.Pt'; Eq 9 from Saxe et al (2017)
                 Pb = eye(Ni) * LMDP.P_I_to_B; % small prob I --> B
-                assert(size(M.P, 1) == N);
-                assert(size(M.P, 2) == N);
+
+                M.P = zeros(N, N);
                 M.P(M.I, M.I) = Pi;
-                M.P(M.B, M.I) = Pb;
-                M.P = M.P ./ sum(M.P, 1); % normalize
+                M.P = (1 - LMDP.P_I_to_B) * M.P ./ sum(M.P, 1); % normalize but leave room for P_I_to_B
                 M.P(isnan(M.P)) = 0;
+                M.P(M.B, M.I) = Pb; % b/c these are normalized to begin with
+                assert(sum(abs(sum(M.P, 1) - 1) < 1e-8 | abs(sum(M.P, 1)) < 1e-8) == N);
+
+                % Compute P(send up at given B state | start at given St state) based on the lower level passive dynamics; we need this for calculating the boundary rewards
+                %
+                Ptb = M1_Pb * inv(eye(M1_Ni) - M1_Pi) * M1_Pt'; % when you start at s in St on lower level, what prob you will end up at b in B\St (lower level) under passive dynamics
+                Ptb = Ptb ./ sum(Ptb, 1); % normalize
+                Ptb(isnan(Ptb)) = 0;
+                self.Ptb = Ptb;
 
                 self.M = M;
             else
@@ -95,7 +108,7 @@ classdef HMLMDP
 
             % Set up reward structure according to goal state(s)
             %
-            rb = MLMDP.R_B_nongoal * ones(numel(self.M.B), 1); % non-goal B states have q = 0
+            rb = HMLMDP.R_nongoal * ones(numel(self.M.B), 1); % non-goal B states have q = 0
             rb(find(self.M.B == e)) = HMLMDP.R_goal; % goal B states have an actual reward
             rb(ismember(self.M.B, self.M.St)) = HMLMDP.R_St; % St states have a small reward to encourage exploring them every now and then
 
@@ -113,8 +126,6 @@ classdef HMLMDP
 
             iter = 1;
             while true
-                Rtot = Rtot + self.M.R(s);
-
                 [x, y] = self.M.I2pos(s);
                 
                 new_s = samplePF(self.M.a(:,s));
@@ -125,9 +136,10 @@ classdef HMLMDP
                     [new_x, new_y] = self.M.I2pos(new_s);
                     map(x, y) = LMDP.empty_symbol;
                     map(new_x, new_y) = LMDP.agent_symbol;
-                    fprintf('(%d, %d) --> (%d, %d)\n', x, y, new_x, new_y);
+                    fprintf('(%d, %d) --> (%d, %d) [%.2f%%]\n', x, y, new_x, new_y, self.M.a(new_s,s) * 100);
                     disp(map);
 
+                    Rtot = Rtot + self.M.R(new_s);
                     s = new_s;
 
                 elseif ismember(new_s, self.M.St)
@@ -135,19 +147,19 @@ classdef HMLMDP
                     %
                     s_next_level = find(self.M.St == new_s); % St state on current level == I state on higher level
 
-                    fprintf('NEXT LEVEL BITCH! (%d, %d) --> %d !!!\n', x, y, s_next_level);
+                    fprintf('NEXT LEVEL BITCH! (%d, %d) --> %d (%.2f%%) !!!\n', x, y, s_next_level, self.M.a(new_s, s) * 100);
 
                     % solve next level MLMDP
                     %
-                    rb_next_level = [4 -1]'; % TODO HARDCODED FIXME
+                    rb_next_level = self.next.Ptb' * rb(~ismember(self.M.B, self.M.St));
+                    rb_next_level = rb_next_level * self.rb_next_level_coef;
+                    %rb_next_level = [4 -1]';
+                    fprintf('                rb_next_level = [%s]\n', sprintf('%.3f, ', rb_next_level));
                     self.next.M.solveMLMDP(rb_next_level);
 
                     % sample until a boundary state
                     %
-                    [~, path] = self.next.M.sample(s_next_level);
-
-                    % s_next_level = path(end-1); % = the last I state on the next level = the next St state on this level 
-                    % TODO ????? or not....
+                    [~, path] = self.next.M.sample(s_next_level); % not really necessary here
 
                     % recalculate reward structure on current level
                     % based on the optimal policy on the higher level
@@ -177,14 +189,14 @@ classdef HMLMDP
 
                     fprintf('....END NEXT LEVEL %d --> (%d, %d)!!!\n', s_next_level, x, y);
                 else
-                    fprintf('(%d, %d) --> END\n', x, y);
+                    fprintf('(%d, %d) --> END [%.2f%%]\n', x, y, self.M.a(new_s, s) * 100);
 
                     Rtot = Rtot + self.M.R(new_s);
                     break
                 end
 
                 iter = iter + 1;
-                if iter >= 20, break; end
+                %if iter >= 20, break; end
             end
 
             fprintf('Total reward: %d\n', Rtot);

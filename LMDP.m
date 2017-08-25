@@ -241,7 +241,7 @@ classdef LMDP < handle
                 if ismember(new_s, self.B)
                     % Boundary state
                     %
-                    fprintf('(%d, %d) --> END\n', x, y);
+                    fprintf('(%d, %d) [%.2f%%] --> END\n', x, y, self.a(new_s, s) * 100);
 
                     Rtot = Rtot + self.R(new_s);
                     path = [path, new_s];
@@ -255,7 +255,7 @@ classdef LMDP < handle
                 map(x, y) = self.empty_symbol;
                 map(new_x, new_y) = self.agent_symbol;
                 
-                fprintf('(%d, %d) --> (%d, %d)\n', x, y, new_x, new_y);
+                fprintf('(%d, %d) --> (%d, %d) [%.3%%]\n', x, y, new_x, new_y, self.a(new_s, s) * 100);
                 disp(map);
                 
                 s = new_s;
