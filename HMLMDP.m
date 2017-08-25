@@ -4,10 +4,10 @@ classdef HMLMDP
         subtask_symbol = 'S';
         goal_symbol = '$'; % we use absorbing_symbol to distinguish all boundary states, however not all of them are goals in the actual task.
 
-        R_goal = 0; % the actual reward for completing the task; shouldn't matter much (0 should work too)
+        R_goal = 3; % the actual reward for completing the task; shouldn't matter much (0 should work too); interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
         R_St = -5; % reward for St states to encourage entering them every now and then; determines at(:,:); too high -> keeps entering St state; too low -> never enters St state... TODO
 
-        rt_coef = 10; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
+        rt_coef = 20; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
     end
 
     properties (Access = public)
@@ -101,7 +101,7 @@ classdef HMLMDP
 
             % Find solution on current level based on reward structure
             %
-            self.M.solveMLMDP(rb)
+            self.M.solveMLMDP(rb);
 
             % Solve the HMLMDP by sampling from multiple levels
             % TODO dedupe with sample
@@ -157,19 +157,18 @@ classdef HMLMDP
                     rt = (ai(:, s_next_level) - Pi(:, s_next_level)) * self.rt_coef; % Eq 10 from Saxe et al (2017)
                     assert(size(rt, 1) == numel(self.M.St));
                     assert(size(rt, 2) == 1);
-                    disp(rt');
-                    disp(rb');
+                    fprintf('                rt = [%s]\n', sprintf('%d ', rt));
+                    fprintf('                old rb = [%s]\n', sprintf('%d ', rb));
                     rb(ismember(self.M.B, self.M.St)) = rt;
-                    disp(rb');
+                    fprintf('                new rb = [%s]\n', sprintf('%d ', rb));
 
                     % recompute the optimal policy based on the 
                     % new reward structure
                     %
                     w = self.M.solveMLMDP(rb);
-                    disp(w);
+                    fprintf('   w = [%s]\n', sprintf('%d ', w));
 
                     fprintf('....END NEXT LEVEL %d --> (%d, %d)!!!\n', s_next_level, x, y);
-                    break;
                 else
                     fprintf('(%d, %d) --> END\n', x, y);
 
@@ -178,7 +177,7 @@ classdef HMLMDP
                 end
 
                 iter = iter + 1;
-                if iter >= 10, break; end
+                if iter >= 20, break; end
             end
 
             fprintf('Total reward: %d\n', Rtot);
