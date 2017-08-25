@@ -48,3 +48,4 @@ map = [
     'S#X..';
     '0.S.0'];
 H = HMLMDP(map);
+H.solve();

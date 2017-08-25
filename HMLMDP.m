@@ -44,7 +44,6 @@ classdef HMLMDP
                 M1_Pt = M1.P(M1.St, M1.I);
                 Pi = M1_Pt * inv(eye(M1_Ni) - M1_Pi) * M1_Pt'; % I --> I from low-level dynamics, Eq 8 from Saxe et al (2017)
                 %Pb = M1.Pb * inv(eye(M1.Ni) - M1.Pi) * M1.Pt'; Eq 9 from Saxe et al (2017)
-                Pi(logical(eye(Ni))) = 0; % TODO P(s|s) = 0; otherwise too high
                 Pb = eye(Ni) * LMDP.P_I_to_B; % small prob I --> B
                 assert(size(M.P, 1) == N);
                 assert(size(M.P, 2) == N);
