@@ -4,11 +4,11 @@ classdef HMLMDP
         subtask_symbol = 'S';
         goal_symbol = '$'; % we use absorbing_symbol to distinguish all boundary states, however not all of them are goals in the actual task.
 
-        R_goal = 3; % the actual reward for completing the task; don't confuse with R_B_goal; interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
+        R_goal = 7; % the actual reward for completing the task; don't confuse with R_B_goal; interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
         R_nongoal = 0; % the rewards at the other boundary states for the task; not to be confused with R_B_nongoal
         R_St = -1; % reward for St states to encourage entering them every now and then; determines at(:,:); too high -> keeps entering St state; too low -> never enters St state... TODO
 
-        rt_coef = 10; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
+        rt_coef = 100; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
         rb_next_level_coef = 10; % coefficient by which to scale rb_next_level
     end
 
@@ -147,7 +147,7 @@ classdef HMLMDP
                     %
                     s_next_level = find(self.M.St == new_s); % St state on current level == I state on higher level
 
-                    fprintf('NEXT LEVEL BITCH! (%d, %d) --> %d (%.2f%%) !!!\n', x, y, s_next_level, self.M.a(new_s, s) * 100);
+                    fprintf('NEXT LEVEL BITCH! (%d, %d) --> %d [%.2f%%] !!!\n', x, y, s_next_level, self.M.a(new_s, s) * 100);
 
                     % solve next level MLMDP
                     %
@@ -196,7 +196,7 @@ classdef HMLMDP
                 end
 
                 iter = iter + 1;
-                %if iter >= 20, break; end
+                if iter >= 30, break; end
             end
 
             fprintf('Total reward: %d\n', Rtot);

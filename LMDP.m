@@ -255,7 +255,7 @@ classdef LMDP < handle
                 map(x, y) = self.empty_symbol;
                 map(new_x, new_y) = self.agent_symbol;
                 
-                fprintf('(%d, %d) --> (%d, %d) [%.3%%]\n', x, y, new_x, new_y, self.a(new_s, s) * 100);
+                fprintf('(%d, %d) --> (%d, %d) [%.2f%%]\n', x, y, new_x, new_y, self.a(new_s, s) * 100);
                 disp(map);
                 
                 s = new_s;
