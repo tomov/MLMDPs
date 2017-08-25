@@ -18,9 +18,9 @@ classdef LMDP < handle
 
         % Unnormalized transition probabilities
         %
-        P_I_to_self = 2; % P(s|s)
-        P_I_to_neighbor = 1; % random walk
-        P_I_to_B = 0.1; % move from I state to corresponding B state
+        uP_I_to_self = 2; % unnormalized P(s|s)
+        uP_I_to_neighbor = 1; % unnormalized random walk
+        P_I_to_B = 0.05; % (normalized) move from I state to corresponding B state
     end
 
     properties (Access = public)
@@ -78,11 +78,11 @@ classdef LMDP < handle
             % each row = [dx, dy, non-normalized P(s'|s)]
             % => random walk, but also bias towards staying in 1 place
             %
-            adj = [0, 0, self.P_I_to_self; ...
-                -1, 0, self.P_I_to_neighbor; ...
-                0, -1, self.P_I_to_neighbor; ...
-                1, 0, self.P_I_to_neighbor; ...
-                0, 1, self.P_I_to_neighbor];
+            adj = [0, 0, self.uP_I_to_self; ...
+                -1, 0, self.uP_I_to_neighbor; ...
+                0, -1, self.uP_I_to_neighbor; ...
+                1, 0, self.uP_I_to_neighbor; ...
+                0, 1, self.uP_I_to_neighbor];
 
             % iterate over all internal states s
             %
@@ -94,31 +94,6 @@ classdef LMDP < handle
                     assert(ismember(s, I));
                     
                     R(s) = self.R_I; % time is money for internal states
-
-                    % Check if there's a corresponding boundary state
-                    %
-                    if I2B(s)
-                        % There's also a boundary state in this square
-                        %
-                        assert(ismember(s, absorbing_inds));
-                        assert(ismember(map(x, y), self.absorbing_symbols));
-
-                        b = I2B(s);
-                        P(b, s) = self.P_I_to_B; % go to corresponding boundary state w/ small prob
-                        
-                        % Get the reward for the boundary state
-                        %
-                        switch map(x, y)
-                            case '$'
-                                R(b) = 10; % $$$ #KNOB
-                                
-                            case '-'
-                                R(b) = -Inf; % :( #KNOB
-                                
-                            otherwise
-                                R(b) = str2num(map(x, y)); % e.g. 9 = $9 #KNOB
-                        end   
-                    end
 
                     if ismember(map(x, y), self.impassable_symbols)
                         % Impassable state e.g. wall -> no neighbors
@@ -149,8 +124,37 @@ classdef LMDP < handle
                         %
                         P(new_s, s) = adj(i, 3);
                     end
-                    
+                  
                     P(:, s) = P(:, s) / sum(P(:, s)); % normalize P(.|s)
+
+                    % Check if there's a corresponding boundary state
+                    %
+                    if I2B(s)
+                        % There's also a boundary state in this square
+                        %
+                        assert(ismember(s, absorbing_inds));
+                        assert(ismember(map(x, y), self.absorbing_symbols));
+
+                        b = I2B(s);
+
+                        % Adjust the probabilities -- we want the probability of going to a B state to be uniform across all I states
+                        %
+                        P(:, s) = P(:, s) * (1 - self.P_I_to_B);
+                        P(b, s) = self.P_I_to_B; % go to corresponding boundary state w/ small prob
+                        
+                        % Get the reward for the boundary state
+                        %
+                        switch map(x, y)
+                            case '$'
+                                R(b) = 10; % $$$ #KNOB
+                                
+                            case '-'
+                                R(b) = -Inf; % :( #KNOB
+                                
+                            otherwise
+                                R(b) = str2num(map(x, y)); % e.g. 9 = $9 #KNOB
+                        end   
+                    end
                 end
             end
             
@@ -294,6 +298,7 @@ classdef LMDP < handle
             %
             assert(size(self.P, 1) == N);
             assert(size(self.P, 2) == N);
+            assert(sum(abs(sum(self.P, 1) - 1) < 1e-8 | abs(sum(self.P, 1)) < 1e-8) == N);
             
             % Rewards
             %

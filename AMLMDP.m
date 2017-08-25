@@ -6,7 +6,7 @@ classdef AMLMDP < MLMDP
         R_St_goal = 0; % reward for goal subtask state 
         R_St_nongoal = -Inf; % reward the other subtask states
 
-        P_I_to_St = 0.1; % move from I state to corresponding St state
+        P_I_to_St = LMDP.P_I_to_B; % (normalized) move from I state to corresponding St state
 
     end
 
@@ -24,7 +24,7 @@ classdef AMLMDP < MLMDP
             N = numel(self.S);
             Nb = numel(self.B);
 
-            assert(isempty(intersect(map(subtask_inds), self.absorbing_symbols))); % subtask states must be distinct from boundary/absorbing states; by our design
+            assert(isempty(intersect(map(subtask_inds), self.absorbing_symbols))); % subtask states must be distinct from boundary/absorbing states; by our design -- otherwise they conflict in I2B vs. I2St, as well as P_I_to_B vs. P_I_to_St (b/c we want those to be normalized probs)
             assert(size(subtask_inds, 1) == 1); % must be a row vector, just like S and St
 
             % Augment state space S with St states
@@ -74,10 +74,10 @@ classdef AMLMDP < MLMDP
             % Augment P 
             P_augm = zeros(N_augm, N_augm);
             P_augm(self.S, self.S) = self.P;
+            P_augm(:, I_with_St) = P_augm(:, I_with_St) * (1 - self.P_I_to_St); % since P_I_to_St is normalized, we need to make 'room' for it
             I_to_St = sub2ind(size(P_augm), St, I_with_St); 
             P_augm(I_to_St) = self.P_I_to_St;
-            P_augm = P_augm ./ sum(P_augm, 1); % normalize
-            P_augm(isnan(P_augm)) = 0; % fix the 0/0's
+            assert(sum(abs(sum(P_augm, 1) - 1) < 1e-8 | abs(sum(P_augm, 1)) < 1e-8) == N_augm);
 
             % Change object
             % we do this in the end b/c we need the old object as we're creating the augmented data structures

@@ -5,9 +5,9 @@ classdef HMLMDP
         goal_symbol = '$'; % we use absorbing_symbol to distinguish all boundary states, however not all of them are goals in the actual task.
 
         R_goal = 3; % the actual reward for completing the task; shouldn't matter much (0 should work too); interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
-        R_St = -5; % reward for St states to encourage entering them every now and then; determines at(:,:); too high -> keeps entering St state; too low -> never enters St state... TODO
+        R_St = -1; % reward for St states to encourage entering them every now and then; determines at(:,:); too high -> keeps entering St state; too low -> never enters St state... TODO
 
-        rt_coef = 20; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
+        rt_coef = 100; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
     end
 
     properties (Access = public)
@@ -43,6 +43,7 @@ classdef HMLMDP
                 M1_Pi = M1.P(M1.I, M1.I);
                 M1_Pt = M1.P(M1.St, M1.I);
                 Pi = M1_Pt * inv(eye(M1_Ni) - M1_Pi) * M1_Pt'; % I --> I from low-level dynamics, Eq 8 from Saxe et al (2017)
+                % note the diagonal entries of Pi will be high (b/c random walk likes to stay around same place rather than go to another specific St state) -> this is crucial; b/c then the active dynamics will prefer going elsewhere -> ai(:,s) - Pi(:,s) will be large negative -> it will discourage agent from wandering back into the same state
                 %Pb = M1.Pb * inv(eye(M1.Ni) - M1.Pi) * M1.Pt'; Eq 9 from Saxe et al (2017)
                 Pb = eye(Ni) * LMDP.P_I_to_B; % small prob I --> B
                 assert(size(M.P, 1) == N);
@@ -156,16 +157,23 @@ classdef HMLMDP
                     rt = (ai(:, s_next_level) - Pi(:, s_next_level)) * self.rt_coef; % Eq 10 from Saxe et al (2017)
                     assert(size(rt, 1) == numel(self.M.St));
                     assert(size(rt, 2) == 1);
-                    fprintf('                rt = [%s]\n', sprintf('%d ', rt));
-                    fprintf('                old rb = [%s]\n', sprintf('%d ', rb));
+                    fprintf('               ai(:,s) = [%s]\n', sprintf('%.3f, ', ai(:, s_next_level)));
+                    fprintf('               Pi(:,s) = [%s]\n', sprintf('%.3f, ', Pi(:, s_next_level)));
+                    fprintf('               ai - Pi = [%s]\n', sprintf('%.3f, ', rt / self.rt_coef));
+                    fprintf('                    rt = [%s]\n', sprintf('%.3f, ', rt));
+                    fprintf('                old rb = [%s]\n', sprintf('%.3f, ', rb));
                     rb(ismember(self.M.B, self.M.St)) = rt;
-                    fprintf('                new rb = [%s]\n', sprintf('%d ', rb));
+                    fprintf('                new rb = [%s]\n', sprintf('%.3f, ', rb));
 
                     % recompute the optimal policy based on the 
                     % new reward structure
                     %
                     w = self.M.solveMLMDP(rb);
-                    fprintf('   w = [%s]\n', sprintf('%d ', w));
+                    fprintf('                     w = [%s]\n', sprintf('%.3f, ', w));
+                    fprintf('                new zi = [%s]\n', sprintf('%.3f, ', self.M.z(self.M.I)'));
+                    fprintf('                new zb = [%s]\n', sprintf('%.3f, ', self.M.z(self.M.B)'));
+                    a_I_to_St = max(self.M.a(self.M.St,:), [], 2)';
+                    fprintf('               a(St|I) = [%s]\n', sprintf('%.3f, ', a_I_to_St));
 
                     fprintf('....END NEXT LEVEL %d --> (%d, %d)!!!\n', s_next_level, x, y);
                 else

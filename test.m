@@ -9,6 +9,8 @@ L.solveLMDP();
 L.sample();
 
 
+%% MLMDP
+%
 fprintf('\n\n\n--------- MLMDP -----------\n\n\n');
 
 
@@ -25,23 +27,28 @@ M.solveMLMDP([-1 -1 10]');
 M.sample();
 
 
+%% augmented MLMDP
+%
 fprintf('\n\n\n--------- AMLMDP -----------\n\n\n');
 
 
 A = AMLMDP([
     '0####';
     '.#X..';
-    '0...0'], [2 5 6]);
+    '0...0'], [2 6]);
 A.presolve();
 
-A.solveMLMDP([10 -1 -1 -1 -1 -1]');
+A.solveMLMDP([10 -1 -1 -1 -1]');
 A.sample();
 
-A.solveMLMDP([-1 -1 -1 -1 -1 10]');
+A.solveMLMDP([-1 -1 -1 -1 10]');
 A.sample();
 
-%%
+
+%% HMLMDP
 %
+
+fprintf('\n\n\n\n\n\n\n\n--------------------------------- HMLMDP ----------------------------------\n\n\n\n\n\n\n');
 
 map = [
     '$####';
