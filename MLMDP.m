@@ -3,8 +3,8 @@
 classdef MLMDP < LMDP
 
     properties (Constant = true)
-        R_B_goal = 0; % reward for goal boundary state for the given task
-        R_B_nongoal = -Inf; % reward for the other boundary states
+        R_B_goal = 0; % reward for goal boundary state for the given basis task
+        R_B_nongoal = -Inf; % reward for the other boundary states for the given basis task
     end
 
     properties (Access = public)
@@ -76,7 +76,7 @@ classdef MLMDP < LMDP
         % compute the best combination of basis tasks
         % and the corresponding actions
         %
-        function solveMLMDP(self, rb)
+        function w = solveMLMDP(self, rb)
             assert(size(rb, 1) == numel(self.B));
             assert(size(rb, 2) == 1);
             N = numel(self.S);

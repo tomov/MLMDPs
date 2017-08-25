@@ -213,9 +213,13 @@ classdef LMDP < handle
         end
 
         % sample paths from a solved LMDP
+        % optionally accepts a starting state; otherwise, uses the X from the map
         %
-        function Rtot = sample(self)
-            s = find(self.map == self.agent_symbol);
+        function [Rtot, path] = sample(self, s)
+            if ~exist('s', 'var')
+                s = find(self.map == self.agent_symbol);
+            end
+            assert(numel(find(self.I == s)) == 1);
 
             Rtot = 0;
             path = [];

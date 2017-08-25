@@ -39,3 +39,12 @@ A.sample();
 
 A.solveMLMDP([-1 -1 -1 -1 -1 10]');
 A.sample();
+
+%%
+%
+
+map = [
+    '$####';
+    'S#X..';
+    '0.S.0'];
+H = HMLMDP(map);

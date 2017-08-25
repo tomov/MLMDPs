@@ -1,3 +1,5 @@
+% Augmented Multitask MLMDP as described in Saxe et al (2017)
+%
 classdef AMLMDP < MLMDP
 
     properties (Constant = true)
@@ -23,6 +25,7 @@ classdef AMLMDP < MLMDP
             Nb = numel(self.B);
 
             assert(isempty(intersect(map(subtask_inds), self.absorbing_symbols))); % subtask states must be distinct from boundary/absorbing states; by our design
+            assert(size(subtask_inds, 1) == 1); % must be a row vector, just like S and St
 
             % Augment state space S with St states
             % Same for boundary states B
