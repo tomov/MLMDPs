@@ -185,7 +185,18 @@ classdef LMDP < handle
             %
             z = nan(N, 1);
             zb = qb; % boundary states are absorbing -> V(s) = R(s) for s in B
+
+            % learn the whole thing in one go
+            %
             zi = inv(eye(Ni) - Mi * Pi') * (Mi * Pb' * zb); % Eq 4 from Saxe et al (2017)
+
+            % Z-learning
+            %
+            %zi = zeros(Ni,1);
+            %for i = 1:30
+            %    zi = Mi * Pi' * zi + Mi * Pb' * zb;
+            %end
+
             z(self.I) = zi;
             z(self.B) = zb;
             self.z = z;

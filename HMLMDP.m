@@ -59,7 +59,7 @@ classdef HMLMDP
                 M.P(M.B, M.I) = Pb; % b/c these are normalized to begin with
                 assert(sum(abs(sum(M.P, 1) - 1) < 1e-8 | abs(sum(M.P, 1)) < 1e-8) == N);
 
-                % Compute P(send up at given B state | start at given St state) based on the lower level passive dynamics; we need this for calculating the boundary rewards
+                % Compute P(end up at given B state | start at given St state) based on the lower level passive dynamics; we need this for calculating the boundary rewards
                 %
                 Ptb = M1_Pb * inv(eye(M1_Ni) - M1_Pi) * M1_Pt'; % when you start at s in St on lower level, what prob you will end up at b in B\St (lower level) under passive dynamics
                 Ptb = Ptb ./ sum(Ptb, 1); % normalize
