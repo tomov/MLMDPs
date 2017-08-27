@@ -44,7 +44,7 @@ classdef HMLMDP
         goal_symbol = '$'; % we use absorbing_symbol to distinguish all boundary states, however not all of them are goals in the actual task.
 
         R_goal = 7; % the actual reward for completing the task; don't confuse with R_B_goal; interacts w/ rt -> has to be > 0 o/w the rt's of undersirable St's are 0 and compete with it, esp when X passes through them -> it is much better to go into the St state than to lose a few more -1's to get to a cheap goal state; but if too high -> never enter St states...
-        R_nongoal = 0; % the rewards at the other boundary states for the task; not to be confused with R_B_nongoal
+        R_nongoal = -Inf; % the rewards at the other boundary states for the task; not to be confused with R_B_nongoal
         R_St = -1; % reward for St states to encourage entering them every now and then; determines at(:,:); too high -> keeps entering St state; too low -> never enters St state... TODO
 
         rt_coef = 100; % coefficient by which to scale rt when recomputing weights on current level based on higher-level solution
@@ -134,6 +134,10 @@ classdef HMLMDP
                 end
             end
 
+            % Some helper variables
+            %
+            Pt = self.M.P(self.M.St, self.M.I);
+
             % Find starting state
             %
             s = find(self.M.map == LMDP.agent_symbol);
@@ -195,9 +199,17 @@ classdef HMLMDP
 
                     % solve next level MLMDP
                     %
-                    rb_next_level = self.next.Ptb' * rb(~ismember(self.M.B, self.M.St));
-                    rb_next_level = rb_next_level * self.rb_next_level_coef;
+                    %rb_next_level = self.next.Ptb' * rb(~ismember(self.M.B, self.M.St)); % Andrew's suggestion
+                    %rb_next_level = rb_next_level * self.rb_next_level_coef;
+
+                    w = self.M.w;
+                    w(ismember(self.M.B, self.M.St)) = 0;
+                    zi = self.M.Zi * w;
+                    %rb_next_level = log(zi(self.M.St2I(self.M.St))) * LMDP.lambda;
+                    rb_next_level = log(Pt * zi) * LMDP.lambda;
+
                     %rb_next_level = [4 -1]';
+
                     fprintf('                rb_next_level = [%s]\n', sprintf('%.3f, ', rb_next_level));
                     self.next.M.solveMLMDP(rb_next_level);
 

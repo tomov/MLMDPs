@@ -91,4 +91,6 @@ map = [
 H = HMLMDP(map);
 H.solve();
 
+self = H; % for debugging
+
 
