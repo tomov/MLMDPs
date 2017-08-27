@@ -1,4 +1,15 @@
-% Augmented Multitask MLMDP as described in Saxe et al (2017)
+% Augmented Multitask LMDP as described in Saxe et al (2017)
+% Customized for 'rooms' domain only.
+%
+% Given states S (split into internal states I, boundary states B, and subtask states St) and passive transition dynamics P(s'|s),
+% creates a regular MLMDP with states {I, B} and dynamics {Pi, Pb},
+% and then augments it with the subtask states St, the transition dynamics Pt, and the subtask basis tasks Qt.
+%
+% The subtask states St are incorporated as additional boundary states and from the point of view of the MLMDP,
+% they become indistinguishable from the regular boundary states B. Thus the augmented MLMDP has new B = {B, St},
+% new Pb = {Pb, Pt}, new Qb = [Qb 0; 0 Qt].
+% The only difference is that we keep a separate list of the subtask states St so the 
+% HMLMDP can go up a level in the hierarchy when it reaches one of them.
 %
 classdef AMLMDP < MLMDP
 

@@ -1,3 +1,42 @@
+% Hierarchical multitask LMDP as described in Saxe et al (2017)
+% Customized for 'rooms' domain only, supports 2 layers only.
+%
+% Given states S (split into internal states I, boundary states B, and subtask states St) and passive transition dynamics P(s'|s),
+% creates a two-layer hierarchical MLMDP. 
+%
+% The lower layer is just an augmented MLMDP (see AMLMDP).
+% The higher layer is a MLMDP with the following properties:
+% The I states of the higher layer correspond to the St states of the lower layer.
+% Each I state of the higher layer has a corresponding B state.
+% The I --> I transition dynamics Pi of the higher layer are defined by the transition dynamics Pi
+% of the lower layer, s.t. St states (s, s') that are closer in the lower layer have higher probabiliy P(s'|s)
+% in the higher layer.
+% The I --> B transition dynamics Pb = identity * small probability, i.e. an I states can go to its
+% corresponding B state with some fixed small probability.
+% Like regular MLMDP's, the higher layer basis set of tasks Qb is the identity matrix,
+% i.e. each task has -Inf rewards at all B states except for one, which has reward 0.
+%
+% Then, given a new task in the form of a specific reward structure rb = rewards for all B states in the
+% lower layer, it finds a step-by-step solution via the hierarchy.
+% First, it solves the lowest layer (notice that right now we do the full-blown solution so we don't 
+% really need the hierarchy; however, it becomes valuable if we do Z-iteration with only a few steps instead).
+% by finding an optimal blend of basis tasks (defined by the weights w), computing the blend desirability f'n
+% zi = Zi * w, and deriving a(s'|s) directly from that.
+% Initially, St states are only given small rewards to encourage exploration.
+% Then starts following the lower-level policy defined by a(s'|s).
+% Once it enters a St state, it goes to the higher level of the hierarchy. The first thing it does then
+% is to come up with a corresponding higher-layer 'task' i.e. a set of rewards rb for the B states
+% of the higher level. Currently, this is simply the expected boundary reward under the lower-layer
+% passive dynamics, i.e. what you would get when starting at the lower-layer I state corresponding
+% to the lower-layer St state corresponding to the higher-layer I state corresponding to the higher-layer
+% B state, and ending up at a lower-level B state.
+% So on the higher layer, we compute rb => qb = exp(rb/lambda) => w = Qb^-1 * qb => zi = Zi * w => a(s'|s).
+% These actions tell us which I states on the higher layer are preferred when starting at s => which
+% St states on the lower layer are preferred from wherever we currently are (i.e. when we entered the higher
+% layer). We use this to re-compute the rewards rt for the St states on the lower layer (based on Eq 10),
+% and in turn re-compute qb, w, zi, and a(s'|s) on the lower layer.
+% Then we go back to the lower layer and continue sampling.
+%
 classdef HMLMDP
 
     properties (Constant = true)
@@ -113,6 +152,11 @@ classdef HMLMDP
             rb(ismember(self.M.B, self.M.St)) = HMLMDP.R_St; % St states have a small reward to encourage exploring them every now and then
 
             % Find solution on current level based on reward structure
+            % Notice that if we do this directly using inversion, it makes the whole hierarchy a bit futile.
+            % The hierarchy makes sense if we use Z-iteration (e.g. b/c the space is big and sparce)
+            % and we only run a constant number of steps, e.g. the agent can reach a subtask state
+            % and the subtask states can reach each other => then she can jump from one subtask state
+            % to another until she reaches the end.
             %
             self.M.solveMLMDP(rb);
 

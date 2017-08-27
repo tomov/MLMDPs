@@ -1,12 +1,27 @@
-% LMDP as described in Saxe et al (2017).
-% Customized to work with the 'rooms' domain only
+% LMDP as described in Saxe et al (2017) and Todorov (2009).
+% Off-policy, model-based approach.
+% Customized to work with the 'rooms' domain only.
+%
+% Given states S (split into internal states I and boundary states B),
+% boundary rewards R(s) for s in B, and passive transitions P(s'|s).
+%
+% Finds a set of active transitions a(s'|s) that maximize the total expected reward (before reaching a B state),
+% without deviating too much from the passive dynamics P(s'|s) (controlled by lambda)
+%
+% First computes the exponentiated rewards q(s) = exp(R(s)/lambda).
+% Then finds the (optimal) desirability function z(s) = exp(V(s)/lambda),
+% where V(s) is the cost-to-go-function  i.e. the expected reward of starting at state s
+% and acting optimally thereafter.
+% Notice that V(s) = R(s) => z(s) = q(s) for s in B, so only zi is interesting (i.e. z(s) for
+% s in I). This is computed directly by matrix inversion or by Z-iteration.
+% Finally, computes the active transitions a(s'|s) directly from z(s)
 %
 classdef LMDP < handle
 
     properties (Constant = true)
         % General LMDP
         % 
-        lambda = 1;
+        lambda = 1; % how much to penalize deviations from passive dynamics P(s'|s)
         R_I = -1; % penalty for staying in one place
 
         % Maze

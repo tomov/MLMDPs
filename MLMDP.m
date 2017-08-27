@@ -1,4 +1,28 @@
-% Multitask MLMDP as described in Saxe et al (2017)
+% Multitask LMDP as described in Saxe et al (2017)
+% Customized for 'rooms' domain only
+%
+% Given states S (split into internal states I and boundary states B) and passive transitions P(s'|s), 
+% creates a basis set of tasks where each task has reward -Inf at all B states except for one, which has reward 0.
+% So each task from the basis set can be interpreted as saying 'Go to state Y'.
+% Thus the task basis matrix Qb is an identity matrix.
+% Notice that this implies that task differ only in their reward structure (which states get reward and how much).
+%
+% Finds a desirability basis matrix Zi where each column c with rows zi(s) = desirability f'n for basis task c
+% = exponentiated expected reward V(s) when starting at state s in I and acting optimally,
+% according to the rewards specified by task c. Notice that Zb = Qb.
+% Does this by solving the single-task LMDP for each basis task c successively, i.e.
+% sets qb = Qb(:,c) and then saves the resulting desirability f'n as Zi(:,c) = zi.
+%
+% Then, given a new task in the form of a specific reward structure rb = rewards for all states s in B,
+% finds a set of active transitions a(s'|s) that maximize the total expected reward directly,
+% using the solutions for the basis set of tasks.
+%
+% It works like this:
+% First computes the corresponding exponentiated rewards qb = exp(rb/lambda).
+% Then computes a task weighing w such that Qb w = qb (or is at least as close as possible).
+% This essentially means that the new task is expressed as a linear combination of the basis tasks.
+% Because of the magical properties of LMDPs (Todorov 2009), this means that the desirability f'n
+% for the optimal policy is Zi w = zi, and from that we directly derive the actual optimal policy a(s'|s).
 %
 classdef MLMDP < LMDP
 
@@ -45,11 +69,11 @@ classdef MLMDP < LMDP
         function presolve(self)
             Zi = [];
             a = [];
-            for i = 1:size(self.Qb, 2) % for each subtask
+            for i = 1:size(self.Qb, 2) % for each basis task
 
-                % set rewards according to subtask
+                % set rewards according to basis task
                 %
-                qb = self.Qb(:,i); % subtask i
+                qb = self.Qb(:,i); % basis task i
                 self.q = [self.qi; qb];
 
                 % call regular LMDP solver
